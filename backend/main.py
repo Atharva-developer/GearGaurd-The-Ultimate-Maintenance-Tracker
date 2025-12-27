@@ -7,13 +7,13 @@ from sqlalchemy.orm import sessionmaker, Session
 import bcrypt 
 from typing import Optional
 
-# --- 1. Database Setup ---
+#setting up the db
 SQLALCHEMY_DATABASE_URL = "postgresql://luckyghai@localhost/gearguard_db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- 2. Database Models ---
+#db models
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -66,7 +66,7 @@ class WorkCenter(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# --- Simple dev migration: ensure new columns exist (safe to run multiple times)
+#migration
 from sqlalchemy import text
 with engine.begin() as conn:
     try:
@@ -84,10 +84,9 @@ with engine.begin() as conn:
             "CREATE TABLE IF NOT EXISTS work_centers (id SERIAL PRIMARY KEY, name VARCHAR UNIQUE, code VARCHAR, tag VARCHAR, location VARCHAR, capacity VARCHAR);"
         ))
     except Exception as e:
-        # If migration fails, log it and continue (we don't want app to crash in dev)
         print("Warning: migration step failed:", e)
 
-# --- 3. Schemas ---
+#Schemas
 class UserSignUp(BaseModel):
     name: str
     email: str
@@ -132,7 +131,7 @@ class WorkCenterCreate(BaseModel):
 class RequestUpdate(BaseModel):
     status: str
 
-# --- 4. App Setup ---
+#setting up the app
 app = FastAPI()
 
 app.add_middleware(
@@ -150,7 +149,7 @@ def get_db():
     finally:
         db.close()
 
-# --- 5. Endpoints ---
+#Endpoints
 
 @app.post("/signup")
 def signup(user: UserSignUp, db: Session = Depends(get_db)):
@@ -244,7 +243,7 @@ def get_requests(db: Session = Depends(get_db)):
 def create_request(req: RequestCreate, db: Session = Depends(get_db)):
     try:
         import datetime
-        # Basic validation: ensure one of equipment or work_center is provided based on target_type
+        #Validating
         if req.target_type == 'work_center':
             if not req.work_center_id:
                 raise HTTPException(status_code=400, detail="work_center_id is required when target_type is 'work_center'")
@@ -324,7 +323,7 @@ def reports_summary(db: Session = Depends(get_db)):
         c = db.query(MaintenanceRequest).filter(MaintenanceRequest.maintenance_team_id == t.id).count()
         team_counts[t.name] = c
 
-    # Average time to repair (for closed requests)
+    # Average time to repair
     from datetime import datetime
     durations = []
     closed = db.query(MaintenanceRequest).filter(MaintenanceRequest.closed_at.isnot(None)).all()
