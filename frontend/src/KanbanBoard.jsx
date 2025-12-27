@@ -13,9 +13,11 @@ const columnsBackendStructure = {
 
 function KanbanBoard() {
   const [columns, setColumns] = useState(columnsBackendStructure);
-  const [showModal, setShowModal] = useState(false);
   const [equipmentList, setEquipmentList] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [workCenters, setWorkCenters] = useState([]);
   const [user, setUser] = useState("User");
+  const [showUserMenu, setShowUserMenu] = useState(false);
   
   // NEW: State for real-time stats
   const [stats, setStats] = useState({ critical: 0, load: "0%", open: 0 });
@@ -36,6 +38,8 @@ function KanbanBoard() {
     fetchEquipment();
     fetchRequests();
     fetchStats(); // Fetch stats on load
+    fetchTeams();
+    fetchWorkCenters();
   }, []);
 
   // NEW: Fetch Stats Function
@@ -83,10 +87,35 @@ function KanbanBoard() {
       console.error("Error fetching equipment:", error);
     }
   };
+  const fetchTeams = async () => {
+    try {
+      const res = await axios.get('http://127.0.0.1:8000/teams/');
+      setTeams(res.data || []);
+    } catch (err) {
+      console.error('Error fetching teams', err);
+    }
+  };
 
+  const fetchWorkCenters = async () => {
+    try {
+      const res = await axios.get('http://127.0.0.1:8000/work_centers/');
+      setWorkCenters(res.data || []);
+    } catch (err) {
+      console.error('Error fetching work centers', err);
+    }
+  };
+
+  const getTeamName = (id) => {
+    const t = teams.find(x => x.id === id);
+    return t ? t.name : 'Unassigned';
+  };
   const getEquipmentName = (id) => {
     const machine = equipmentList.find(eq => eq.id === id);
     return machine ? machine.name : "Unknown Machine";
+  };
+  const getWorkCenterName = (id) => {
+    const wc = workCenters.find(w => w.id === id);
+    return wc ? wc.name : 'Unknown Work Center';
   };
 
   const onDragEnd = async (result) => {
@@ -122,17 +151,49 @@ function KanbanBoard() {
     }
   };
 
+  // Request details modal state
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+
+  const openRequestDetails = async (req) => {
+    try {
+      const res = await axios.get(`http://127.0.0.1:8000/requests/${req.id}`);
+      setSelectedRequest(res.data);
+    } catch (err) {
+      // fallback to passed object
+      setSelectedRequest(req);
+    }
+    setShowRequestModal(true);
+  };
+
+  const closeRequestModal = () => {
+    setSelectedRequest(null);
+    setShowRequestModal(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
+  };
+
+  const openSettings = () => {
+    setShowUserMenu(false);
+    navigate('/settings');
+  };
+
   const handleCreateRequest = async (e) => {
     e.preventDefault();
     try {
-        await axios.post('http://127.0.0.1:8000/requests/', newRequest);
+        const payload = { ...newRequest, created_by: localStorage.getItem('user') || 'Unknown', maintenance_team_id: newRequest.maintenance_team_id || null };
+        await axios.post('http://127.0.0.1:8000/requests/', payload);
         alert("Ticket Created!");
-        setShowModal(false);
         fetchRequests();
         fetchStats(); // Update stats immediately
         setNewRequest({ subject: '', equipment_id: '', priority: 'Normal', request_type: 'Corrective' });
     } catch (error) {
-        alert("Error creating ticket. Did you select an equipment?");
+        const msg = error?.response?.data?.detail || "Error creating ticket. Did you select an equipment?";
+        alert(msg);
     }
   };
 
@@ -145,24 +206,32 @@ function KanbanBoard() {
             <div className="font-bold text-xl tracking-tight">GearGuard</div>
             <div className="hidden md:flex gap-4 text-sm font-medium text-white/90">
                 <span className="cursor-pointer hover:text-white border-b-2 border-white pb-0.5">Dashboard</span>
-                <span className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Maintenance</span>
-                <span className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Equipment</span>
-                <span className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Reporting</span>
-                <span className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Teams</span>
+                <span onClick={() => navigate('/maintenance/calendar')} className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Maintenance Calendar</span>
+                <span onClick={() => navigate('/equipment')} className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Equipment</span>
+                <span onClick={() => navigate('/work-centers')} className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Work Centers</span>
+                <span onClick={() => navigate('/reports')} className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Reporting</span>
+                <span onClick={() => navigate('/teams')} className="cursor-pointer hover:text-white opacity-80 hover:opacity-100">Teams</span>
             </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="relative flex items-center gap-4">
             <Bell size={18} className="cursor-pointer opacity-80 hover:opacity-100" />
-            <div className="w-8 h-8 rounded-full bg-[#F0B323] flex items-center justify-center text-xs font-bold text-white">
-                {user.charAt(0).toUpperCase()}
-            </div>
+            <button onClick={() => setShowUserMenu(prev => !prev)} className="w-8 h-8 rounded-full bg-[#F0B323] flex items-center justify-center text-xs font-bold text-white focus:outline-none">
+                {user ? user.charAt(0).toUpperCase() : 'U'}
+            </button>
+            {showUserMenu && (
+              <div className="absolute right-0 mt-12 w-48 bg-white rounded shadow-md border border-gray-200 text-sm text-gray-700">
+                <button onClick={openSettings} className="w-full text-left px-4 py-2 hover:bg-gray-50">Settings</button>
+                <hr />
+                <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-red-600 hover:bg-gray-50">Logout</button>
+              </div>
+            )}
         </div>
       </nav>
 
       {/* 2. CONTROL PANEL */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 sticky top-0 z-10">
         <button 
-            onClick={() => setShowModal(true)}
+            onClick={() => navigate('/maintenance/new')}
             className="bg-[#714B67] text-white px-6 py-2 rounded shadow hover:bg-[#5d3d54] transition-all font-bold text-sm flex items-center gap-2 uppercase tracking-wide"
         >
             <Plus size={18} /> New Request
@@ -248,12 +317,12 @@ function KanbanBoard() {
                                     item.priority === "High" ? "bg-orange-400" : "bg-[#714B67]"
                                 }`}></div>
                                 
-                                <div className="pl-2">
+                                <div className="pl-2" onClick={() => openRequestDetails(item)}>
                                     <div className="flex justify-between items-start mb-1">
                                         <h4 className="font-bold text-gray-800 text-sm">{item.subject}</h4>
                                     </div>
                                     <div className="text-xs text-gray-500 mb-2">
-                                        Machine: <span className="text-gray-700 font-medium">{getEquipmentName(item.equipment_id)}</span>
+                                        Target: <span className="text-gray-700 font-medium">{item.target_type === 'work_center' ? getWorkCenterName(item.work_center_id) : getEquipmentName(item.equipment_id)}</span>
                                     </div>
                                     <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-50">
                                         <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">{item.request_type}</span>
@@ -278,63 +347,27 @@ function KanbanBoard() {
       </div>
 
       {/* MODAL */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
-            <div className="bg-white p-8 rounded-xl w-[500px] shadow-2xl animate-fade-in">
-                <h2 className="text-2xl font-bold text-[#714B67] mb-6 border-b pb-2">New Request</h2>
-                <form onSubmit={handleCreateRequest} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-1">Subject</label>
-                        <input 
-                            className="w-full border border-gray-300 rounded p-2 focus:border-[#714B67] outline-none"
-                            value={newRequest.subject}
-                            onChange={e => setNewRequest({...newRequest, subject: e.target.value})}
-                            required
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-1">Equipment</label>
-                        <select 
-                            className="w-full border border-gray-300 rounded p-2 focus:border-[#714B67] outline-none bg-white"
-                            value={newRequest.equipment_id}
-                            onChange={e => setNewRequest({...newRequest, equipment_id: e.target.value})}
-                            required
-                        >
-                            <option value="">Select Machine...</option>
-                            {equipmentList.map(eq => (
-                                <option key={eq.id} value={eq.id}>{eq.name} ({eq.serial_number})</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1">Priority</label>
-                            <select 
-                                className="w-full border border-gray-300 rounded p-2 focus:border-[#714B67] outline-none bg-white"
-                                onChange={e => setNewRequest({...newRequest, priority: e.target.value})}
-                            >
-                                <option value="Normal">Normal</option>
-                                <option value="High">High</option>
-                                <option value="Critical">Critical</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1">Type</label>
-                            <select 
-                                className="w-full border border-gray-300 rounded p-2 focus:border-[#714B67] outline-none bg-white"
-                                onChange={e => setNewRequest({...newRequest, request_type: e.target.value})}
-                            >
-                                <option value="Corrective">Corrective</option>
-                                <option value="Preventive">Preventive</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div className="flex justify-end gap-3 mt-6">
-                        <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                        <button type="submit" className="px-6 py-2 bg-[#714B67] text-white rounded font-bold hover:bg-[#5d3d54]">Create</button>
-                    </div>
-                </form>
+
+
+      {/* REQUEST DETAILS MODAL */}
+      {showRequestModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">Request #{selectedRequest.id}</h3>
+              <button className="text-gray-600" onClick={closeRequestModal}>✕</button>
             </div>
+
+            <div className="space-y-3 text-sm text-gray-700">
+              <div><strong>Subject:</strong> {selectedRequest.subject}</div>
+              <div><strong>Target:</strong> {selectedRequest.target_type === 'work_center' ? getWorkCenterName(selectedRequest.work_center_id) : getEquipmentName(selectedRequest.equipment_id)}</div>
+              <div><strong>Created By:</strong> {selectedRequest.created_by || 'Unknown'}</div>
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <button onClick={closeRequestModal} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Close</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
